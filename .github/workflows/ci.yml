@@ -26,6 +26,8 @@ jobs:
     name: Build Development Images
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Detect changes per service
         id: changes
@@ -64,6 +66,16 @@ jobs:
           docker build -t $REGISTRY/${IMAGE_NODE}:$TAG services/node-service
           docker push $REGISTRY/${IMAGE_NODE}:$TAG
           echo "tag=$TAG" >> $GITHUB_OUTPUT
+      
+      - name: Debug changes
+        run: |
+          echo "Go changed: ${{ steps.changes.outputs.go-service }}"
+          echo "Node changed: ${{ steps.changes.outputs['node-service'] }}"
+          
+    outputs:
+      go-service: ${{ steps.changes.outputs.go-service }}
+      node-service: ${{ steps.changes.outputs['node-service'] }}
+
 
   dev-deploy:
     needs: dev-build
