@@ -1,6 +1,7 @@
 namespace: monorepo-staging
 resources:
   - ../../base
+  - ingress.yam
 
 images:
   - name: ghcr.io/ndrwj/monorepo-cfx/services/go-service
