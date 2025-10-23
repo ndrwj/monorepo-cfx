@@ -4,7 +4,7 @@ metadata:
   name: go-service
   namespace: monorepo
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: go-service
@@ -13,8 +13,12 @@ spec:
       labels:
         app: go-service
     spec:
+      imagePullSecrets:
+        - name: ghcr-secret
       containers:
         - name: go-service
+          command: ["./main"]
+          args: ["http"]
           image: ghcr.io/ndrwj/monorepo-cfx/services/go-service
           ports:
             - containerPort: 8080
