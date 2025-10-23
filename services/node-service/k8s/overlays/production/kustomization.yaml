@@ -1,6 +1,7 @@
 namespace: monorepo-prod
 resources:
   - ../../base
+  - ingress.yaml
 
 images:
   - name: ghcr.io/your-org/your-repo/services/node-service
