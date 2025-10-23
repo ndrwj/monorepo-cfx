@@ -192,6 +192,9 @@ jobs:
     name: Deploy Production
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GHCR_PAT }}
 
       - name: Extract service and version
         id: vars
