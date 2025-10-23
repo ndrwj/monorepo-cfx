@@ -6,11 +6,22 @@ Repository ini dibuat sebagai solusi untuk SRE Take-Home Assignment yang diberik
 
 ### Requirements
 - Monorepo dengan dua backend services:
-  - Service 1: Go (REST API)
+  - Service 1: Go (HTTP Server)
   - Service 2: Node.js (Express.js)
 - Infrastructure: Kubernetes
 - CI/CD Pipeline automation
 - Public service exposure via DNS
+
+### Yang Sudah Selesai
+- Build container images for both services.
+- Push container images to an image registry of your choice.
+- Deploy to a Kubernetes cluster (you may provide just the Kubernetes
+manifests instead of actual deployment).
+- The services should be accessible via a DNS domain. (via sslip.io) 
+- Design monitoring/logging for the deployed services.
+
+### Yang Belum Selesai
+- (Optional) Build and test the services.
 
 ## 🏗️ Project Structure
 
@@ -18,22 +29,34 @@ Repository ini dibuat sebagai solusi untuk SRE Take-Home Assignment yang diberik
 monorepo-cfx/
 ├── services/
 │   ├── go-service/              # Go application
-│   │   ├── main.go
-│   │   ├── go.mod
-│   │   ├── Dockerfile
+│   │   ├── main.go             # Simple HTTP server with IP logging
+│   │   ├── go.mod              # Go module definition
+│   │   ├── Dockerfile          # Multi-stage Docker build
 │   │   └── k8s/                 # Kubernetes manifests
-│   │       ├── base/
-│   │       └── overlays/
+│   │       ├── base/           # Base deployment config
+│   │       │   ├── deployment.yaml
+│   │       │   ├── service.yaml
+│   │       │   └── kustomization.yaml
+│   │       └── overlays/       # Environment-specific configs
 │   │           ├── development/
+│   │           │   ├── ingress.yaml
+│   │           │   └── kustomization.yaml
 │   │           ├── staging/
+│   │           │   ├── ingress.yaml
+│   │           │   └── kustomization.yaml
 │   │           └── production/
+│   │               ├── ingress.yaml
+│   │               └── kustomization.yaml
 │   └── node-service/            # Node.js application
-│       ├── index.js
-│       ├── package.json
-│       ├── Dockerfile
+│       ├── index.js            # Express.js server with IP logging
+│       ├── package.json        # Node.js dependencies
+│       ├── Dockerfile          # Alpine-based container
 │       └── k8s/                 # Kubernetes manifests
-│           ├── base/
-│           └── overlays/
+│           ├── base/           # Base deployment config
+│           │   ├── deployment.yaml
+│           │   ├── service.yaml
+│           │   └── kustomization.yaml
+│           └── overlays/       # Environment-specific configs
 │               ├── development/
 │               ├── staging/
 │               └── production/
@@ -41,273 +64,456 @@ monorepo-cfx/
 │   └── workflows/
 │       └── ci.yml               # GitHub Actions CI/CD pipeline
 ├── monitoring/
-│   └── grafana-alloy.yaml       # Monitoring configuration
+│   └── grafana-alloy.yaml       # Grafana Alloy monitoring stack
 └── README.md
 ```
 
 ## 🚀 Services Description
 
-### Go Service (`/api/go`)
+### Go Service
 - **Framework**: Standard library `net/http`
-- **Endpoints**:
-  - `GET /` - Health check
-  - `GET /health` - Detailed health check
-  - `GET /api/users` - List users
-  - `POST /api/users` - Create user
+- **Endpoint**:
+  - `GET /` - Returns "Hello from Go Service! 🚀" with client IP logging
 - **Port**: 8080
+- **Features**:
+  - Client IP extraction dari X-Forwarded-For header
+  - Request logging dengan method, path, dan client IP
+  - Simple HTTP response
 
-### Node.js Service (`/api/node`)
-- **Framework**: Express.js
-- **Endpoints**:
-  - `GET /` - Health check
-  - `GET /health` - Detailed health check
-  - `GET /api/products` - List products
-  - `POST /api/products` - Create product
-- **Port**: 3000
+### Node.js Service
+- **Framework**: Express.js v4.18.2
+- **Endpoint**:
+  - `GET /` - Returns "Hello from Node Service! 🚀" with client IP logging
+- **Port**: 8080
+- **Features**:
+  - Middleware untuk IP logging dari X-Forwarded-For header
+  - Request logging dengan method, path, dan client IP
+  - Simple HTTP response
 
 ## 🔄 CI/CD Pipeline Workflow
 
 ### GitHub Actions Pipeline (`.github/workflows/ci.yml`)
 
-Pipeline berjalan pada setiap push/PR ke `main` branch:
+#### **Pipeline Triggers:**
+- Push ke `development` branch → **Development deployment**
+- Push ke `release/**` branches → **Staging deployment**
+- Pull Request merged ke main dari `release/**` → **Production deployment**
 
-1. **Build & Test Stage**:
-   - Build Go application
-   - Test Go service dengan coverage
-   - Install dan test Node.js application
-   - Build Node.js application
+#### **CI/CD Pipeline Flow:**
 
-2. **Container Build & Push**:
-   - Build Docker image untuk Go service
-   - Build Docker image untuk Node.js service
-   - Push images ke GitHub Container Registry (ghcr.io)
+```mermaid
+graph TD
+    A[Code Push] --> B{Branch Type?}
 
-3. **Kubernetes Deployment**:
-   - Generate Kubernetes manifests menggunakan Kustomize
-   - Deploy ke Kubernetes cluster
-   - Validasi deployment status
+    B -->|development| C[Development Flow]
+    B -->|release/*| D[Staging Flow]
+    B -->|PR merged| E[Production Flow]
+
+    C --> C1[Detect Changes]
+    C1 --> C2[Build Docker Images]
+    C2 --> C3[Push to GHCR]
+    C3 --> C4[Deploy to Dev Cluster]
+
+    D --> D1[Parse Service & Version]
+    D1 --> D2[Build Docker Images]
+    D2 --> D3[Push to GHCR]
+    D3 --> D4[Deploy to Staging Cluster]
+
+    E --> E1[Parse Service & Version]
+    E1 --> E2[Deploy to Production Cluster]
+    E2 --> E3[Create Git Tag]
+    E3 --> E4[Push Tag]
+
+    subgraph "Development Environment"
+        C1
+        C2
+        C3
+        C4
+    end
+
+    subgraph "Staging Environment"
+        D1
+        D2
+        D3
+        D4
+    end
+
+    subgraph "Production Environment"
+        E1
+        E2
+        E3
+        E4
+    end
+
+    style C fill:#e1f5fe
+    style D fill:#f3e5f5
+    style E fill:#e8f5e8
+```
+
+#### **Pipeline Stages (Current Implementation):**
+
+**Development Pipeline:**
+1. **Change Detection**: Menggunakan `dorny/paths-filter` untuk detect changed services
+2. **Docker Build**: Build images hanya untuk services yang berubah
+3. **Registry Push**: Push ke `ghcr.io` dengan tag `dev-{commit-sha}`
+4. **Kustomize Deploy**: Update image tags dan apply ke development namespace
+
+**Staging Pipeline:**
+1. **Branch Parsing**: Extract service dan version dari `release/{service}/{version}`
+2. **Docker Build**: Build specific service dengan version tag
+3. **Registry Push**: Push ke `ghcr.io` dengan semantic version tag
+4. **Kustomize Deploy**: Deploy ke staging environment
+
+**Production Pipeline:**
+1. **PR Validation**: Hanya deploy jika PR merged dari release branches
+2. **Direct Deploy**: Deploy ke production namespace
+3. **Git Tagging**: Create dan push release tags
+4. **Version Management**: Semantic versioning untuk production releases
+
+#### **Key Features:**
+- **Incremental Builds**: Build hanya services yang berubah
+- **Multi-Environment**: dev/staging/production namespaces
+- **Semantic Versioning**: Production releases dengan proper tagging
+- **Container Registry**: GitHub Container Registry (ghcr.io)
 
 ### Environment Setup
-- **Development**: `dev.domain.com` (menggunakan xip.io)
-- **Staging**: `staging.domain.com` (menggunakan xip.io)
-- **Production**: `prod.domain.com`
+- **Development**: `monorepo-dev` namespace
+- **Staging**: `monorepo-staging` namespace
+- **Production**: `monorepo-production` namespace
 
 ## 🛠️ Technology Stack
 
-### Application Development
-- **Go**: v1.21+ (REST API dengan standard library)
-- **Node.js**: v18+ (Express.js framework)
-- **Containerization**: Docker + Multi-stage builds
+### Application Development (Actual Implementation)
+- **Go**: v1.25.3 (Standard library `net/http`)
+- **Node.js**: v20-alpine (Express.js v4.18.2)
+- **Containerization**:
+  - Go: Multi-stage Docker build dengan golang:1.25.3 + alpine:3.19
+  - Node.js: Single-stage dengan node:20-alpine
 
-### CI/CD Pipeline
-- **CI/CD Platform**: GitHub Actions
+### CI/CD Pipeline (Actual Implementation)
+- **CI/CD Platform**: GitHub Actions (self-hosted runners)
 - **Container Registry**: GitHub Container Registry (ghcr.io)
 - **Infrastructure as Code**: Kubernetes YAML + Kustomize
-- **Secret Management**: Kubernetes Secrets
+- **Change Detection**: dorny/paths-filter v3
+- **Secret Management**:
+  - GitHub Secrets (`GHCR_PAT`)
+  - Kubernetes Secrets (`ghcr-secret`)
 
-### Infrastructure
-- **Container Orchestration**: Kubernetes (v1.28+)
-- **Ingress Controller**: NGINX Ingress Controller
-- **Load Balancer**: Kubernetes Service + Ingress
-- **DNS**: xip.io untuk development/testing
+### Infrastructure (Actual Implementation)
+- **Container Orchestration**: Kubernetes
+- **Deployment Strategy**:
+  - Go Service: 2 replicas
+  - Node.js Service: 1 replica
+- **Namespaces**: monorepo-dev, monorepo-staging, monorepo-production
+- **Service Type**: ClusterIP dengan Ingress untuk external access
 
-### Monitoring (Bonus)
-- **Monitoring Stack**: Grafana Alloy (Prometheus + Grafana)
-- **Metrics**: Application metrics + Infrastructure metrics
-- **Logging**: Structured logging dengan correlation IDs
+### Monitoring (Bonus - Actual Implementation)
+- **Monitoring Stack**: Grafana Alloy (latest)
+- **Log Collection**: Loki source file processing
+- **Kubernetes Discovery**: Automatic pod discovery untuk monitoring namespaces
+- **Log Processing**: log parsing dengan structured labels
 
 ## 🚀 How to Run/Test
 
 ### Prerequisites
 ```bash
 # Install required tools
-kubectl install
-docker install
-helm install (optional for ingress controller)
+docker >= 20.x
+kubectl >= 1.28
+kustomize >= 4.x
+gh (GitHub CLI) - untuk authentication
 ```
 
-### Local Development
+### Local Development (Actual Implementation)
 ```bash
 # Clone repository
-git clone https://github.com/username/monorepo-cfx.git
+git clone https://github.com/ndrwj/monorepo-cfx.git
 cd monorepo-cfx
 
 # Run Go service
 cd services/go-service
 go run main.go
+# Output: "Go service running on :8080"
 
 # Run Node.js service (separate terminal)
 cd services/node-service
 npm install
 npm start
+# Output: "Node service running on :8080"
+
+# Test both services
+curl http://localhost:8080/  # Go service
+curl http://localhost:8080/  # Node service (jika running di port berbeda)
 ```
 
-### Kubernetes Deployment
+### CI/CD Pipeline Setup (Actual Implementation)
 
-#### 1. Setup Kubernetes Cluster
+#### 1. GitHub Setup
 ```bash
-# Untuk local development
-minikube start
-atau
-kind create cluster
-atau
-docker desktop Kubernetes
+# Set GitHub secrets
+gh secret set GHCR_PAT --body "your-github-token"
 ```
 
-#### 2. Install Ingress Controller
+#### 2. Kubernetes Cluster Setup
 ```bash
-# Install NGINX Ingress Controller
-kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml
+# Create namespaces
+kubectl create namespace monorepo-dev
+kubectl create namespace monorepo-staging
+kubectl create namespace monorepo-production
+kubectl create namespace monitoring
+
+# Create image pull secret untuk GHCR
+kubectl create secret docker-registry ghcr-secret \
+  --docker-server=ghcr.io \
+  --docker-username=ndrwj \
+  --docker-password=$GITHUB_TOKEN \
+  --namespace=monorepo-dev
+# Repeat untuk setiap namespace
 ```
 
-#### 3. Deploy Services
+#### 3. Monitoring Setup
 ```bash
-# Deploy ke development environment
+# Deploy Grafana Alloy monitoring stack
+kubectl apply -f monitoring/grafana-alloy.yaml
+```
+
+### Deployment via CI/CD (Actual Implementation)
+
+#### Development Deployment
+```bash
+# Push ke development branch
+git checkout development
+git add .
+git commit -m "feat: update service"
+git push origin development
+
+# CI/CD akan otomatis:
+# 1. Build Docker images
+# 2. Push ke ghcr.io dengan tag dev-{commit}
+# 3. Deploy ke monorepo-dev namespace
+```
+
+#### Staging Deployment
+```bash
+# Create release branch
+git checkout -b release/go-service/v1.0.0
+git push origin release/go-service/v1.0.0
+
+# CI/CD akan otomatis:
+# 1. Parse service dan version
+# 2. Build Docker image dengan tag v1.0.0
+# 3. Deploy ke monorepo-staging namespace
+```
+
+#### Production Deployment
+```bash
+# Create PR dari staging ke main
+gh pr create --base main --head release/go-service/v1.0.0 --title "Release go-service v1.0.0"
+
+# Setelah PR merged, CI/CD akan:
+# 1. Deploy ke monorepo-production namespace
+# 2. Create git tag
+# 3. Push tag ke repository
+```
+
+### Manual Kubernetes Deployment
+```bash
+# Deploy ke development
 kubectl apply -k services/go-service/k8s/overlays/development/
 kubectl apply -k services/node-service/k8s/overlays/development/
 
-# Deploy ke staging environment
+# Deploy ke staging
 kubectl apply -k services/go-service/k8s/overlays/staging/
 kubectl apply -k services/node-service/k8s/overlays/staging/
 
-# Deploy ke production environment
+# Deploy ke production
 kubectl apply -k services/go-service/k8s/overlays/production/
 kubectl apply -k services/node-service/k8s/overlays/production/
 ```
 
-#### 4. Verify Deployment
+### Testing Services
+
+#### 🔗 **Public Access via sslip.io**
+**🌐 Live Production URLs:**
+
+| Service | Development | Staging | Production |
+|---------|--------------|----------|-------------|
+| **Go Service** | [https://34.50.70.200.sslip.io/go-service-dev](https://34.50.70.200.sslip.io/go-service-dev) | [https://34.50.70.200.sslip.io/go-service-staging](https://34.50.70.200.sslip.io/go-service-staging) | [https://34.50.70.200.sslip.io/go-service-prod](https://34.50.70.200.sslip.io/go-service-prod) |
+| **Node Service** | [https://34.50.70.200.sslip.io/node-service](https://34.50.70.200.sslip.io/node-service) | [https://34.50.70.200.sslip.io/node-service-staging](https://34.50.70.200.sslip.io/node-service-staging) | [https://34.50.70.200.sslip.io/node-service-prod](https://34.50.70.200.sslip.io/node-service-prod) |
+
+#### 🧪 **Quick Testing**
 ```bash
-# Check deployment status
-kubectl get pods -n monorepo-cfx
-kubectl get services -n monorepo-cfx
-kubectl get ingress -n monorepo-cfx
+# Test public endpoints
+curl https://34.50.70.200.sslip.io/go-service-dev
+curl https://34.50.70.200.sslip.io/node-service-dev
 
-# Test services
-kubectl port-forward svc/go-service 8080:80 -n monorepo-cfx
-kubectl port-forward svc/node-service 3000:80 -n monorepo-cfx
-
-# Test via curl
-curl http://localhost:8080/
-curl http://localhost:3000/
+# Expected responses:
+# Go Service:  "Hello from Go Service! 🚀"
+# Node Service: "Hello from Node Service! 🚀"
 ```
 
-### Testing with Public DNS
-```bash
-# Gunakan xip.io untuk public access
-# Update ingress hostname di deployment manifests
-# Contoh: go-service.192.168.49.2.nip.io
-
-# Access services via browser
-http://go-service.192.168.49.2.nip.io/
-http://node-service.192.168.49.2.nip.io/
-```
-
-## 📊 Monitoring Setup (Bonus)
+## 📊 Monitoring Setup (Bonus - Actual Implementation)
 
 ### Grafana Alloy Configuration
 ```bash
 # Apply monitoring configuration
 kubectl apply -f monitoring/grafana-alloy.yaml
 
-# Access Grafana UI
-kubectl port-forward svc/grafana 3000:3000 -n monitoring
+# Check monitoring components
+kubectl get pods -n monitoring
+kubectl get daemonset -n monitoring
+
+# Access Alloy UI
+kubectl port-forward svc/grafana-alloy-svc 12345:12345 -n monitoring
 ```
 
-### Metrics Collection
-- **Go Service**: Prometheus metrics via `/metrics` endpoint
-- **Node.js Service**: Custom metrics middleware
-- **Infrastructure**: Node exporter + kube-state-metrics
+![grafana-alloy](docs/images/grafana-alloy-graph.png)
 
 ## 🔧 Configuration
 
-### Environment Variables
-```yaml
-# Go Service Environment
-- name: PORT
-  value: "8080"
-- name: LOG_LEVEL
-  value: "info"
-- name: ENVIRONMENT
-  valueFrom:
-    fieldRef:
-      fieldPath: metadata.namespace
-
-# Node.js Service Environment
-- name: PORT
-  value: "3000"
-- name: NODE_ENV
-  valueFrom:
-    fieldRef:
-      fieldPath: metadata.namespace
-```
-
-### Kubernetes Resources
-- **Go Service**:
-  - CPU request: 100m, limit: 500m
-  - Memory request: 128Mi, limit: 512Mi
-- **Node.js Service**:
-  - CPU request: 100m, limit: 500m
-  - Memory request: 128Mi, limit: 512Mi
-
-## 🐛 Troubleshooting
-
-### Common Issues
-1. **Pod stuck in Pending**: Check resource requests vs cluster capacity
-2. **Image pull errors**: Verify registry credentials and image names
-3. **Ingress not working**: Check Ingress Controller status and DNS configuration
-
-### Debug Commands
+### Docker Images (Actual Implementation)
 ```bash
-# Check pod logs
-kubectl logs -f deployment/go-service -n monorepo-cfx
-kubectl logs -f deployment/node-service -n monorepo-cfx
+# Go Service
+ghcr.io/ndrwj/monorepo-cfx/services/go-service:dev-{commit}
+ghcr.io/ndrwj/monorepo-cfx/services/go-service:{version}
 
-# Debug pods
-kubectl exec -it deployment/go-service -n monorepo-cfx -- /bin/sh
-kubectl describe pod <pod-name> -n monorepo-cfx
-
-# Check events
-kubectl get events -n monorepo-cfx --sort-by='.lastTimestamp'
+# Node.js Service
+ghcr.io/ndrwj/monorepo-cfx/services/node-service:dev-{commit}
+ghcr.io/ndrwj/monorepo-cfx/services/node-service:{version}
 ```
 
-## 📈 Performance Considerations
+### Kubernetes Configuration (Actual Implementation)
 
-### Optimizations Implemented
-- **Multi-stage Docker builds** untuk smaller image sizes
-- **Kustomize overlays** untuk environment-specific configurations
-- **Resource limits** untuk prevent resource starvation
-- **Health checks** untuk proper load balancing
-- **Graceful shutdown** untuk zero-downtime deployments
+#### Go Service Deployment
+```yaml
+replicas: 2
+containers:
+  - name: go-service
+    command: ["./main"]
+    args: ["http"]
+    image: ghcr.io/ndrwj/monorepo-cfx/services/go-service
+    ports:
+      - containerPort: 8080
+imagePullSecrets:
+  - name: ghcr-secret
+```
 
-### Scalability
-- **Horizontal Pod Autoscaling** dapat ditambahkan
-- **Multiple replicas** untuk high availability
-- **Separate namespaces** untuk environment isolation
+#### Node.js Service Deployment
+```yaml
+replicas: 1
+containers:
+  - name: node-service
+    command: ["node"]
+    args: ["index.js"]
+    image: ghcr.io/ndrwj/monorepo-cfx/services/node-service
+    ports:
+      - containerPort: 8080
+imagePullSecrets:
+  - name: ghcr-secret
+```
 
-## 🔒 Security Considerations
+### Kustomize Structure
+```yaml
+# Base configuration untuk setiap service:
+# - deployment.yaml (base deployment specs)
+# - service.yaml (ClusterIP service)
+# - kustomization.yaml (base kustomization)
 
-- **Non-root containers** untuk security
-- **Read-only filesystem** dimana memungkinkan
-- **Secret management** dengan Kubernetes Secrets
-- **Network policies** untuk traffic isolation (optional)
-- **Image scanning** dapat diintegrasikan di CI pipeline
+# Environment-specific overlays:
+# - ingress.yaml (external access configuration)
+# - kustomization.yaml (environment-specific patches)
+```
 
-## 🚀 Future Enhancements
+## 🌐 Public Access Configuration
 
-1. **Advanced Monitoring**: APM integration (New Relic/DataDog)
-2. **Security Scanning**: Container image vulnerability scanning
-3. **Automated Testing**: Integration + E2E tests
-4. **GitOps**: ArgoCD/Flux untuk continuous deployment
-5. **Service Mesh**: Istio/Linkerd untuk advanced traffic management
-6. **Auto-scaling**: HPA + VPA untuk automatic scaling
+### Nginx Reverse Proxy Configuration
 
-## 📞 Support
+**🔧 Nginx Setup untuk sslip.io Access:**
 
-Untuk pertanyaan atau diskusi lebih lanjut tentang implementasi ini:
-- **GitHub Issues**: [Create Issue](https://github.com/username/monorepo-cfx/issues)
-- **Documentation**: Check inline code comments
-- **Deployment Guide**: Follow step-by-step instructions above
+```nginx
+# HTTP to HTTPS redirect
+server {
+    listen 80;
+    server_name 34.50.70.200.sslip.io;
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
 
----
+# HTTPS main server block
+server {
+    listen 443 ssl;
+    server_name 34.50.70.200.sslip.io;
 
-**Note**: Repository ini dibuat khusus untuk memenuhi requirements SRE assignment dan mendemonstrasikan best practices dalam CI/CD, Kubernetes deployment, dan microservices architecture.
+    # SSL configuration
+    ssl_certificate /etc/nginx/ssl/certificate.crt;
+    ssl_certificate_key /etc/nginx/ssl/private.key;
+
+    # Development environment
+    location /go-service-dev {
+        proxy_pass https://[BACKEND_API_DOMAIN]/go-service-dev;
+        proxy_set_header Host [BACKEND_API_DOMAIN];
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+
+    # Staging environment
+    location /go-service-staging {
+        proxy_pass https://[BACKEND_API_DOMAIN]/go-service-staging;
+        proxy_set_header Host [BACKEND_API_DOMAIN];
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+
+    # Production environment
+    location /go-service-prod {
+        proxy_pass https://[BACKEND_API_DOMAIN]/go-service-prod;
+        proxy_set_header Host [BACKEND_API_DOMAIN];
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+
+    # Node.js services
+    location /node-service {
+        proxy_pass https://[BACKEND_API_DOMAIN]/node-service;
+        proxy_set_header Host [BACKEND_API_DOMAIN];
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+
+    location /node-service-staging {
+        proxy_pass https://[BACKEND_API_DOMAIN]/node-service-staging;
+        proxy_set_header Host [BACKEND_API_DOMAIN];
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+
+    location /node-service-prod {
+        proxy_pass https://[BACKEND_API_DOMAIN]/node-service-prod;
+        proxy_set_header Host [BACKEND_API_DOMAIN];
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+}
+```
+
+## 📸 Visual Documentation
+
+### Kubernetes Services Status
+![Nodes Status](docs/images/k8s-nodes.png)
+![Pod Status](docs/images/k8s-pods.png)
+*Services running across dev, staging, and production namespaces*
+
+### Public Access Testing
+![go-service Endpoints](docs/images/public-go.png)
+![node-service Endpoints](docs/images/public-go.png)
+*Testing live endpoints via sslip.io*
+
+### Monitoring Dashboard
+![Grafana](docs/images/grafana-dashboard.png)
