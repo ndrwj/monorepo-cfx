@@ -33,12 +33,12 @@ jobs:
         id: changes
         uses: dorny/paths-filter@v3
         with:
+          base: development
           filters: |
             go-service:
               - 'services/go-service/**'
             node-service:
               - 'services/node-service/**'
-        base: development
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
