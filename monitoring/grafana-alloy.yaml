@@ -1,0 +1,300 @@
+--- # Daemonset.yaml
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: grafana-alloy-daemonset
+  namespace: monitoring
+spec:
+  selector:
+    matchLabels:
+      name: grafana-alloy
+  template:
+    metadata:
+      labels:
+        name: grafana-alloy
+    spec:
+      serviceAccount: grafana-alloy-serviceaccount
+      containers:
+      - name: grafana-alloy-container
+        image: grafana/alloy:latest
+        command: ["/bin/sh", "-c"]
+        args: ["alloy run --stability.level experimental --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy"]
+        env: 
+        - name: 'HOSTNAME' # needed when using kubernetes_sd_configs
+          valueFrom:
+            fieldRef:
+              fieldPath: 'spec.nodeName'
+        volumeMounts:
+        - name: logs
+          mountPath: /var/log
+        - name: grafana-alloy-config
+          mountPath: /etc/alloy/config.alloy
+          subPath: config.alloy
+        - name: gitleaks-config
+          mountPath: /etc/gitleaks/gitleaks.toml
+          subPath: gitleaks.toml
+        - mountPath: /var/lib/docker/containers
+          name: varlibdockercontainers
+          readOnly: true
+      volumes:
+      - name: logs
+        hostPath:
+          path: /var/log
+      - name: varlibdockercontainers
+        hostPath:
+          path: /var/lib/docker/containers
+      - name: grafana-alloy-config
+        configMap:
+          name: grafana-alloy-config
+      - name: gitleaks-config            
+        configMap:
+          name: gitleaks-config 
+--- # configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-alloy-config
+  namespace: monitoring
+data:
+  config.alloy: |
+    discovery.kubernetes "pod_discovery_monorepo" {
+            role = "pod"
+            namespaces {
+              names = ["monorepo-dev", "monorepo-staging", "monorepo-production"]
+            }
+    }
+
+    discovery.relabel "pod_logs" {
+            targets = discovery.kubernetes.pod_discovery_monorepo.targets
+
+            rule {
+                    action        = "drop"
+                    regex         = "Succeeded|Failed|Completed"
+                    source_labels = ["__meta_kubernetes_pod_phase"]
+            }
+
+            rule {
+                    action        = "replace"
+                    source_labels = ["__meta_kubernetes_pod_node_name"]
+                    target_label  = "__host__"
+            }
+
+            rule {
+                    regex  = "__meta_kubernetes_pod_label_(.+)"
+                    action = "labelmap"
+            }
+
+            rule {
+                    source_labels = ["__meta_kubernetes_namespace", "__meta_kubernetes_pod_name"]
+                    separator     = "/"
+                    target_label  = "job"
+            }
+
+            rule {
+                    source_labels = ["__meta_kubernetes_namespace"]
+                    target_label  = "namespace"
+            }
+
+            rule {
+                    action        = "replace"
+                    source_labels = ["__meta_kubernetes_pod_name"]
+                    target_label  = "pod"
+            }
+
+            rule {
+                    action        = "replace"
+                    source_labels = ["__meta_kubernetes_pod_container_name"]
+                    target_label  = "container"
+            }
+
+            rule {
+                    source_labels = ["__meta_kubernetes_pod_uid", "__meta_kubernetes_pod_container_name"]
+                    separator     = "/"
+                    target_label  = "__path__"
+                    replacement   = "/var/log/pods/*$1/*.log"
+            }
+
+            rule {
+                action        = "replace"
+                source_labels = ["__meta_kubernetes_node_name"]
+                target_label  = "node"
+            }
+    }
+
+    local.file_match "pod_logs" {
+            path_targets = discovery.relabel.pod_logs.output
+    }
+
+    loki.source.file "pod_logs" {
+            targets               = local.file_match.pod_logs.targets
+            forward_to            = [loki.secretfilter.default.receiver]
+            legacy_positions_file = "/tmp/positions.yaml"
+    }
+
+    loki.secretfilter "default" {
+            forward_to = [loki.process.pod_logs.receiver]
+            gitleaks_config = "/etc/gitleaks/gitleaks.toml"
+            redact_with = "$SECRET_NAME"
+    }
+
+    loki.process "pod_logs" {
+            forward_to = [loki.write.log_monorepo.receiver]
+
+            stage.cri { }
+
+            stage.json {
+                expressions = {
+                    level = "level",
+                    service_name = "service.name",
+                    service_type = "service.type",
+                    panic = "panic",
+                    notify_send = "notify.send",
+                    notify_topic = "notify.topic",
+                }
+            }
+
+            stage.labels {
+                values = {
+                    level = "",
+                    service_name = "",
+                    service_type = "",
+                    panic = "",
+                    notify_send = "",
+                    notify_topic = "",
+                }
+            }
+
+    }
+  
+    loki.write "log_monorepo" {
+            endpoint {
+                    url = "http://192.168.1.14:3100/loki/api/v1/push"
+            }
+            external_labels = {}
+    }
+
+--- #gitleaks-config
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gitleaks-config
+data:
+  gitleaks.toml: |
+    title = "Bareksa Log Redaction"
+
+    # ID have to contains JSON key and regex pattern, complete with quotes
+    # because the log will be in JSON format and detection of secrets have to use
+    # regex and replaced the whole detected string with the ID.
+
+    [[rules]]
+    id    = '''"pin_redacted":"*****"'''
+    regex = '''(?i)"pin"\s*:\s*"\d{6}"'''
+
+    [[rules]]
+    id    = '''"pin_confirm_redacted":"*****"'''
+    regex = '''(?i)"pin_confirm"\s*:\s*"\d{6}"'''
+
+    [[rules]]
+    id = '''"password_redacted":"*****"'''
+    regex = '''(?i)"password"\s*:\s*".+?"'''
+    keywords = []
+    redact = true 
+
+    [[rules]]
+    id = '''"password_confirm_redacted":"*****"'''
+    regex = '''(?i)"password_confirm"\s*:\s*".+?"'''
+  
+    [[rules]]
+    id = '''"password_confirmation_redacted":"*****"'''
+    regex = '''(?i)"password_confirmation"\s*:\s*".+?"'''
+
+    [[rules]]
+    id = '''"access_token_redacted":"*****"'''
+    regex = '''(?i)"access_token"\s*:\s*".+?"'''
+
+    [[rules]]
+    id = '''"refresh_token_redacted":"*****"'''
+    regex = '''(?i)"refresh_token"\s*:\s*".+?"'''
+
+    [[rules]]
+    id = '''\"access_token_redacted\":\"*****\"'''
+    regex = '''(?i)(\\"access_token\\"\s*:\s*)\\"[^\\"]+\\"'''
+
+    [[rules]]
+    id = '''\"refresh_token_redacted\":\"*****\"'''
+    regex = '''(?i)(\\"refresh_token\\"\s*:\s*)\\"[^\\"]+\\"'''
+
+    [[rules]]
+    id    = '''"Authorization_redacted":"*****"'''
+    regex = '''(?i)"Authorization"\s*:\s*\[?".+?"\]?'''
+
+    [[rules]]
+    id    = '''"hash_token_redacted":"*****"'''
+    regex = '''(?i)"hash_token"\s*:\s*".+?"'''
+
+    [[rules]]
+    id    = '''"token_redacted":"*****"'''
+    regex = '''(?i)"token"\s*:\s*".+?"'''
+
+    [[rules]]
+    id = '''Bearer_redacted *****'''
+    regex = '''(?i)[Bb]earer\s+\w+'''
+
+    [[rules]]
+    id = '''"firebase_token_redacted":"*****"'''
+    regex = '''(?i)"firebase_token"\s*:\s*".+?"'''
+
+--- # Clusterrole.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: grafana-alloy-clusterrole
+rules:
+- apiGroups: [""]
+  resources: ["pods", "namespaces", "nodes"]
+  verbs: ["get", "watch", "list"]
+- apiGroups: ["apps"]
+  resources: ["replicasets", "deployments"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["extensions"]
+  resources: ["replicasets"]
+  verbs: ["get", "list", "watch"]
+
+--- # ServiceAccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  namespace: monitoring
+  name: grafana-alloy-serviceaccount
+
+--- # Rolebinding.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: grafana-alloy-clusterrolebinding
+subjects:
+    - kind: ServiceAccount
+      name: grafana-alloy-serviceaccount
+      namespace: monitoring
+roleRef:
+    kind: ClusterRole
+    name: grafana-alloy-clusterrole
+    apiGroup: rbac.authorization.k8s.io
+
+--- # service.yaml
+apiVersion: v1
+kind: Service
+metadata: 
+  name: grafana-alloy-svc
+  namespace: monitoring
+  labels: 
+    name: grafana-alloy-svc
+spec:
+  ports:
+    - name: grafana-alloy
+      port: 12345
+      targetPort: 12345
+  selector: 
+    name: grafana-alloy
+  type: ClusterIP
+  #loadBalancerIP: 34.50.91.72
