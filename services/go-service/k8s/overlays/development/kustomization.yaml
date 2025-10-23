@@ -1,0 +1,7 @@
+namespace: monorepo-dev
+resources:
+  - ../../base
+
+images:
+  - name: ghcr.io/ndrwj/monorepo-cfx/services/go-service
+    newTag: latest

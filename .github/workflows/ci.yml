@@ -1,0 +1,207 @@
+name: Monorepo Multi-Service CI/CD
+
+on:
+  push:
+    branches:
+      - development
+  pull_request:
+    branches:
+      - release/*
+      - main
+    types:
+      - closed
+
+env:
+  REGISTRY: ghcr.io/${{ github.repository }}
+  IMAGE_GO: services/go-service
+  IMAGE_NODE: services/node-service
+
+jobs:
+  ###############
+  # DEVELOPMENT #
+  ###############
+  dev-build:
+    if: github.ref == 'refs/heads/development'
+    runs-on: self-hosted
+    name: Build Development Images
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect changes per service
+        id: changes
+        uses: dorny/paths-filter@v2
+        with:
+          filters: |
+            go-service:
+              - 'services/go-service/**'
+            node-service:
+              - 'services/node-service/**'
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Build & Push Go
+      - name: Build & Push Go (dev)
+        if: steps.changes.outputs.go-service == 'true'
+        run: |
+          TAG=dev-${GITHUB_SHA::7}
+          docker build -t $REGISTRY/${IMAGE_GO}:$TAG services/go-service
+          docker push $REGISTRY/${IMAGE_GO}:$TAG
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      # Build & Push Node
+      - name: Build & Push Node (dev)
+        if: steps.changes.outputs['node-service'] == 'true'
+        run: |
+          TAG=dev-${GITHUB_SHA::7}
+          docker build -t $REGISTRY/${IMAGE_NODE}:$TAG services/node-service
+          docker push $REGISTRY/${IMAGE_NODE}:$TAG
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+  dev-deploy:
+    needs: dev-build
+    if: github.ref == 'refs/heads/development'
+    runs-on: self-hosted
+    name: Deploy Development
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy Go (dev)
+        if: needs.dev-build.outputs['go-service'] == 'true'
+        run: |
+          cd services/go-service/k8s/overlays/development
+          kustomize edit set image $REGISTRY/${IMAGE_GO}=$REGISTRY/${IMAGE_GO}:dev-${GITHUB_SHA::7}
+          kubectl apply -k .
+          kubectl rollout status deployment/go-service -n development
+
+      - name: Deploy Node (dev)
+        if: needs.dev-build.outputs['node-service'] == 'true'
+        run: |
+          cd services/node-service/k8s/overlays/development
+          kustomize edit set image $REGISTRY/${IMAGE_NODE}=$REGISTRY/${IMAGE_NODE}:dev-${GITHUB_SHA::7}
+          kubectl apply -k .
+          kubectl rollout status deployment/node-service -n development
+
+  ############
+  # STAGING  #
+  ############
+  staging-build:
+    if: >
+      github.event_name == 'pull_request' &&
+      startsWith(github.event.pull_request.head.ref, 'release/')
+    runs-on: self-hosted
+    name: Build Staging Images
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect changes per service
+        id: changes
+        uses: dorny/paths-filter@v2
+        with:
+          filters: |
+            go-service:
+              - 'services/go-service/**'
+            node-service:
+              - 'services/node-service/**'
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & Push Go (staging)
+        if: steps.changes.outputs.go-service == 'true'
+        run: |
+          TAG=${GITHUB_HEAD_REF#release/}
+          docker build -t $REGISTRY/${IMAGE_GO}:$TAG services/go-service
+          docker push $REGISTRY/${IMAGE_GO}:$TAG
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Build & Push Node (staging)
+        if: steps.changes.outputs['node-service'] == 'true'
+        run: |
+          TAG=${GITHUB_HEAD_REF#release/}
+          docker build -t $REGISTRY/${IMAGE_NODE}:$TAG services/node-service
+          docker push $REGISTRY/${IMAGE_NODE}:$TAG
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+  staging-deploy:
+    needs: staging-build
+    if: >
+      github.event_name == 'pull_request' &&
+      startsWith(github.event.pull_request.head.ref, 'release/')
+    runs-on: self-hosted
+    name: Deploy Staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy Go (staging)
+        if: needs.staging-build.outputs['go-service'] == 'true'
+        run: |
+          cd services/go-service/k8s/overlays/staging
+          kustomize edit set image $REGISTRY/${IMAGE_GO}=$REGISTRY/${IMAGE_GO}:${GITHUB_HEAD_REF#release/}
+          kubectl apply -k .
+          kubectl rollout status deployment/go-service -n staging
+
+      - name: Deploy Node (staging)
+        if: needs.staging-build.outputs['node-service'] == 'true'
+        run: |
+          cd services/node-service/k8s/overlays/staging
+          kustomize edit set image $REGISTRY/${IMAGE_NODE}=$REGISTRY/${IMAGE_NODE}:${GITHUB_HEAD_REF#release/}
+          kubectl apply -k .
+          kubectl rollout status deployment/node-service -n staging
+
+  ################
+  # PRODUCTION   #
+  ################
+  production-deploy:
+    if: >
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.head.ref, 'release/')
+    runs-on: self-hosted
+    name: Deploy Production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract service release tag
+        id: vars
+        run: |
+          TAG=${GITHUB_HEAD_REF#release/}
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Deploy Go (production)
+        if: |
+          # optional: check if go-service changed in this release
+          true
+        run: |
+          cd services/go-service/k8s/overlays/production
+          kustomize edit set image $REGISTRY/${IMAGE_GO}=$REGISTRY/${IMAGE_GO}:${{ steps.vars.outputs.tag }}
+          kubectl apply -k .
+          kubectl rollout status deployment/go-service -n production
+          git tag go-service-${{ steps.vars.outputs.tag }}
+          git push origin go-service-${{ steps.vars.outputs.tag }}
+
+      - name: Deploy Node (production)
+        if: |
+          # optional: check if node-service changed in this release
+          true
+        run: |
+          cd services/node-service/k8s/overlays/production
+          kustomize edit set image $REGISTRY/${IMAGE_NODE}=$REGISTRY/${IMAGE_NODE}:${{ steps.vars.outputs.tag }}
+          kubectl apply -k .
+          kubectl rollout status deployment/node-service -n production
+          git tag node-service-${{ steps.vars.outputs.tag }}
+          git push origin node-service-${{ steps.vars.outputs.tag }}
