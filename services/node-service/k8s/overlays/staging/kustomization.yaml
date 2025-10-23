@@ -1,0 +1,7 @@
+namespace: monorepo-staging
+resources:
+  - ../../base
+
+images:
+  - name: ghcr.io/ndrwj/monorepo-cfx/services/node-service
+    newTag: latest

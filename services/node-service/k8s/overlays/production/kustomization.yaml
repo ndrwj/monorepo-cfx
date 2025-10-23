@@ -1,0 +1,7 @@
+namespace: monorepo-prod
+resources:
+  - ../../base
+
+images:
+  - name: ghcr.io/your-org/your-repo/services/node-service
+    newTag: stable
