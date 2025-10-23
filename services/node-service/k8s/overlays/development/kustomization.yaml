@@ -1,0 +1,8 @@
+namespace: monorepo-dev
+resources:
+  - ../../base
+  - ingress.yaml
+
+images:
+  - name: ghcr.io/ndrwj/monorepo-cfx/services/node-service
+    newTag: latest

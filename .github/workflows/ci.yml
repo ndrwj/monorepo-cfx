@@ -1,0 +1,223 @@
+name: Monorepo Multi-Service CI/CD
+
+on:
+  push:
+    branches:
+      - development
+      - 'release/**'
+  pull_request:
+    branches:
+      - main
+    types:
+      - closed
+
+
+env:
+  REGISTRY: ghcr.io/${{ github.repository }}
+  IMAGE_GO: services/go-service
+  IMAGE_NODE: services/node-service
+
+jobs:
+  ###############
+  # DEVELOPMENT #
+  ###############
+  dev-build:
+    if: github.ref == 'refs/heads/development'
+    runs-on: self-hosted
+    name: Build Development Images
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changes per service
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          base: development
+          filters: |
+            go-service:
+              - 'services/go-service/**'
+            node-service:
+              - 'services/node-service/**'
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_PAT }}
+
+      # Build & Push Go
+      - name: Build & Push Go (dev)
+        if: steps.changes.outputs.go-service == 'true'
+        run: |
+          TAG=dev-${GITHUB_SHA::7}
+          docker build -t $REGISTRY/${IMAGE_GO}:$TAG services/go-service
+          docker push $REGISTRY/${IMAGE_GO}:$TAG
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      # Build & Push Node
+      - name: Build & Push Node (dev)
+        if: steps.changes.outputs['node-service'] == 'true'
+        run: |
+          TAG=dev-${GITHUB_SHA::7}
+          docker build -t $REGISTRY/${IMAGE_NODE}:$TAG services/node-service
+          docker push $REGISTRY/${IMAGE_NODE}:$TAG
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+        
+      - name: Debug changes
+        run: |
+          echo "Go changed: ${{ steps.changes.outputs.go-service }}"
+          echo "Node changed: ${{ steps.changes.outputs['node-service'] }}"
+
+    outputs:
+      go-service: ${{ steps.changes.outputs.go-service }}
+      node-service: ${{ steps.changes.outputs['node-service'] }}
+
+
+  dev-deploy:
+    needs: dev-build
+    if: github.ref == 'refs/heads/development'
+    runs-on: self-hosted
+    name: Deploy Development
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy Go (dev)
+        if: needs.dev-build.outputs['go-service'] == 'true'
+        run: |
+          cd services/go-service/k8s/overlays/development
+          kustomize edit set image $REGISTRY/${IMAGE_GO}=$REGISTRY/${IMAGE_GO}:dev-${GITHUB_SHA::7}
+          kubectl apply -k .
+
+      - name: Deploy Node (dev)
+        if: needs.dev-build.outputs['node-service'] == 'true'
+        run: |
+          cd services/node-service/k8s/overlays/development
+          kustomize edit set image $REGISTRY/${IMAGE_NODE}=$REGISTRY/${IMAGE_NODE}:dev-${GITHUB_SHA::7}
+          kubectl apply -k .
+
+  ###########
+  # STAGING #
+  ###########
+  staging-build:
+    if: startsWith(github.ref, 'refs/heads/release/')
+    runs-on: self-hosted
+    name: Build Staging Images
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_PAT }}
+
+      - name: Extract service and version
+        id: vars
+        run: |
+          BRANCH_NAME=${GITHUB_REF#refs/heads/release/}   # e.g. go-service/v0.0.1
+          SERVICE=${BRANCH_NAME%%/*}                     # go-service
+          VERSION=${BRANCH_NAME#*/}                      # v0.0.1
+          echo "service=$SERVICE" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Validate service
+        run: |
+          if [[ "${{ steps.vars.outputs.service }}" != "go-service" && "${{ steps.vars.outputs.service }}" != "node-service" ]]; then
+            echo "Invalid service: ${{ steps.vars.outputs.service }}"
+            exit 1
+          fi
+
+      - name: Build & Push Go (staging)
+        if: steps.vars.outputs.service == 'go-service'
+        run: |
+          docker build -t $REGISTRY/${IMAGE_GO}:${{ steps.vars.outputs.version }} services/go-service
+          docker push $REGISTRY/${IMAGE_GO}:${{ steps.vars.outputs.version }}
+
+      - name: Build & Push Node (staging)
+        if: steps.vars.outputs.service == 'node-service'
+        run: |
+          docker build -t $REGISTRY/${IMAGE_NODE}:${{ steps.vars.outputs.version }} services/node-service
+          docker push $REGISTRY/${IMAGE_NODE}:${{ steps.vars.outputs.version }}
+
+  staging-deploy:
+    needs: staging-build
+    if: startsWith(github.ref, 'refs/heads/release/')
+    runs-on: self-hosted
+    name: Deploy Staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract service and version
+        id: vars
+        run: |
+          BRANCH_NAME=${GITHUB_REF#refs/heads/release/}
+          SERVICE=${BRANCH_NAME%%/*}
+          VERSION=${BRANCH_NAME#*/}
+          echo "service=$SERVICE" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Deploy Go (staging)
+        if: steps.vars.outputs.service == 'go-service'
+        run: |
+          cd services/go-service/k8s/overlays/staging
+          kustomize edit set image $REGISTRY/${IMAGE_GO}=$REGISTRY/${IMAGE_GO}:${{ steps.vars.outputs.version }}
+          kubectl apply -k .
+
+      - name: Deploy Node (staging)
+        if: steps.vars.outputs.service == 'node-service'
+        run: |
+          cd services/node-service/k8s/overlays/staging
+          kustomize edit set image $REGISTRY/${IMAGE_NODE}=$REGISTRY/${IMAGE_NODE}:${{ steps.vars.outputs.version }}
+          kubectl apply -k .
+
+  ################
+  # PRODUCTION   #
+  ################
+  production-deploy:
+    if: >
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.head.ref, 'release/')
+    runs-on: self-hosted
+    name: Deploy Production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract service and version
+        id: vars
+        run: |
+          BRANCH_NAME=${{ github.event.pull_request.head.ref }}
+          BRANCH_NAME=${BRANCH_NAME#release/}        # go-service/v0.0.1
+          SERVICE=${BRANCH_NAME%%/*}                 # go-service
+          VERSION=${BRANCH_NAME#*/}                  # v0.0.1
+          echo "service=$SERVICE" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Deploy Go (production)
+        if: steps.vars.outputs.service == 'go-service'
+        run: |
+          cd services/go-service/k8s/overlays/production
+          kustomize edit set image $REGISTRY/${IMAGE_GO}=$REGISTRY/${IMAGE_GO}:${{ steps.vars.outputs.version }}
+          kubectl apply -k .
+          git tag release/go-service/${{ steps.vars.outputs.version }}
+          git push origin release/go-service/${{ steps.vars.outputs.version }}
+
+
+      - name: Deploy Node (production)
+        if: steps.vars.outputs.service == 'node-service'
+        run: |
+          cd services/node-service/k8s/overlays/production
+          kustomize edit set image $REGISTRY/${IMAGE_NODE}=$REGISTRY/${IMAGE_NODE}:${{ steps.vars.outputs.version }}
+          kubectl apply -k .
+          git tag release/node-service/${{ steps.vars.outputs.version }}
+          git push origin release/node-service/${{ steps.vars.outputs.version }}
