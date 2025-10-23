@@ -46,9 +46,6 @@ spec:
       - name: grafana-alloy-config
         configMap:
           name: grafana-alloy-config
-      - name: gitleaks-config            
-        configMap:
-          name: gitleaks-config 
 --- # configmap.yaml
 apiVersion: v1
 kind: ConfigMap
@@ -172,77 +169,6 @@ data:
             }
             external_labels = {}
     }
-
---- #gitleaks-config
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: gitleaks-config
-data:
-  gitleaks.toml: |
-    title = "Bareksa Log Redaction"
-
-    # ID have to contains JSON key and regex pattern, complete with quotes
-    # because the log will be in JSON format and detection of secrets have to use
-    # regex and replaced the whole detected string with the ID.
-
-    [[rules]]
-    id    = '''"pin_redacted":"*****"'''
-    regex = '''(?i)"pin"\s*:\s*"\d{6}"'''
-
-    [[rules]]
-    id    = '''"pin_confirm_redacted":"*****"'''
-    regex = '''(?i)"pin_confirm"\s*:\s*"\d{6}"'''
-
-    [[rules]]
-    id = '''"password_redacted":"*****"'''
-    regex = '''(?i)"password"\s*:\s*".+?"'''
-    keywords = []
-    redact = true 
-
-    [[rules]]
-    id = '''"password_confirm_redacted":"*****"'''
-    regex = '''(?i)"password_confirm"\s*:\s*".+?"'''
-  
-    [[rules]]
-    id = '''"password_confirmation_redacted":"*****"'''
-    regex = '''(?i)"password_confirmation"\s*:\s*".+?"'''
-
-    [[rules]]
-    id = '''"access_token_redacted":"*****"'''
-    regex = '''(?i)"access_token"\s*:\s*".+?"'''
-
-    [[rules]]
-    id = '''"refresh_token_redacted":"*****"'''
-    regex = '''(?i)"refresh_token"\s*:\s*".+?"'''
-
-    [[rules]]
-    id = '''\"access_token_redacted\":\"*****\"'''
-    regex = '''(?i)(\\"access_token\\"\s*:\s*)\\"[^\\"]+\\"'''
-
-    [[rules]]
-    id = '''\"refresh_token_redacted\":\"*****\"'''
-    regex = '''(?i)(\\"refresh_token\\"\s*:\s*)\\"[^\\"]+\\"'''
-
-    [[rules]]
-    id    = '''"Authorization_redacted":"*****"'''
-    regex = '''(?i)"Authorization"\s*:\s*\[?".+?"\]?'''
-
-    [[rules]]
-    id    = '''"hash_token_redacted":"*****"'''
-    regex = '''(?i)"hash_token"\s*:\s*".+?"'''
-
-    [[rules]]
-    id    = '''"token_redacted":"*****"'''
-    regex = '''(?i)"token"\s*:\s*".+?"'''
-
-    [[rules]]
-    id = '''Bearer_redacted *****'''
-    regex = '''(?i)[Bb]earer\s+\w+'''
-
-    [[rules]]
-    id = '''"firebase_token_redacted":"*****"'''
-    regex = '''(?i)"firebase_token"\s*:\s*".+?"'''
 
 --- # Clusterrole.yaml
 apiVersion: rbac.authorization.k8s.io/v1
