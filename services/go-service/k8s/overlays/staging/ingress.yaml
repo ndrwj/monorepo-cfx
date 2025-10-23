@@ -10,7 +10,7 @@ spec:
   rules:
     - http:
         paths:
-          - path: /go-service-prod
+          - path: /go-service-staging
             pathType: Prefix
             backend:
               service:
