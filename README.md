@@ -106,7 +106,7 @@ graph TD
     A[Code Push] --> B{Branch Type?}
 
     B -->|development| C[Development Flow]
-    B -->|release/"{go,node}"-service/*| D[Staging Flow]
+    B -->|release/*-service/*| D[Staging Flow]
     B -->|PR merged| E[Production Flow]
 
     C --> C1[Detect Changes]
