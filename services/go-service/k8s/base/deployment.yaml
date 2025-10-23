@@ -17,6 +17,8 @@ spec:
         - name: ghcr-secret
       containers:
         - name: go-service
+          command: ["./main"]
+          args: ["http"]
           image: ghcr.io/ndrwj/monorepo-cfx/services/go-service
           ports:
             - containerPort: 8080
