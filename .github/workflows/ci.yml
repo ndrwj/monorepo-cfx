@@ -182,9 +182,9 @@ jobs:
           TAG=${GITHUB_HEAD_REF#release/}
           echo "tag=$TAG" >> $GITHUB_OUTPUT
 
+        # optional: check if go-service changed in this release
       - name: Deploy Go (production)
         if: |
-          # optional: check if go-service changed in this release
           true
         run: |
           cd services/go-service/k8s/overlays/production
@@ -194,9 +194,9 @@ jobs:
           git tag go-service-${{ steps.vars.outputs.tag }}
           git push origin go-service-${{ steps.vars.outputs.tag }}
 
+        # optional: check if node-service changed in this release
       - name: Deploy Node (production)
         if: |
-          # optional: check if node-service changed in this release
           true
         run: |
           cd services/node-service/k8s/overlays/production
