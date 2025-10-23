@@ -80,26 +80,26 @@ jobs:
 
 
   dev-deploy:
-  needs: dev-build
-  if: github.ref == 'refs/heads/development'
-  runs-on: self-hosted
-  name: Deploy Development
-  steps:
-    - uses: actions/checkout@v4
+    needs: dev-build
+    if: github.ref == 'refs/heads/development'
+    runs-on: self-hosted
+    name: Deploy Development
+    steps:
+      - uses: actions/checkout@v4
 
-    - name: Deploy Go (dev)
-      if: needs.dev-build.outputs['go-service'] == 'true'
-      run: |
-        cd services/go-service/k8s/overlays/development
-        kustomize edit set image $REGISTRY/${IMAGE_GO}=$REGISTRY/${IMAGE_GO}:dev-${GITHUB_SHA::7}
-        kubectl apply -k .
+      - name: Deploy Go (dev)
+        if: needs.dev-build.outputs['go-service'] == 'true'
+        run: |
+          cd services/go-service/k8s/overlays/development
+          kustomize edit set image $REGISTRY/${IMAGE_GO}=$REGISTRY/${IMAGE_GO}:dev-${GITHUB_SHA::7}
+          kubectl apply -k .
 
-    - name: Deploy Node (dev)
-      if: needs.dev-build.outputs['node-service'] == 'true'
-      run: |
-        cd services/node-service/k8s/overlays/development
-        kustomize edit set image $REGISTRY/${IMAGE_NODE}=$REGISTRY/${IMAGE_NODE}:dev-${GITHUB_SHA::7}
-        kubectl apply -k .
+      - name: Deploy Node (dev)
+        if: needs.dev-build.outputs['node-service'] == 'true'
+        run: |
+          cd services/node-service/k8s/overlays/development
+          kustomize edit set image $REGISTRY/${IMAGE_NODE}=$REGISTRY/${IMAGE_NODE}:dev-${GITHUB_SHA::7}
+          kubectl apply -k .
 
   ###########
   # STAGING #
