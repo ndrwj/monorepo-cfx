@@ -31,7 +31,7 @@ jobs:
 
       - name: Detect changes per service
         id: changes
-        uses: dorny/paths-filter@v2
+        uses: dorny/paths-filter@v3
         with:
           filters: |
             go-service:
