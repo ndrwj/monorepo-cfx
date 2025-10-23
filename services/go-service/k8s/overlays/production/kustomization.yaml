@@ -4,5 +4,5 @@ resources:
   - ingress.yaml
 
 images:
-  - name: ghcr.io/your-org/your-repo/services/go-service
-    newTag: stable
+  - name: ghcr.io/ndrwj/monorepo-cfx/services/go-service
+    newTag: latest
