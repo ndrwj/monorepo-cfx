@@ -14,6 +14,6 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: go-service-service
+                name: go-service
                 port:
                   number: 80
