@@ -92,7 +92,6 @@ jobs:
           cd services/go-service/k8s/overlays/development
           kustomize edit set image $REGISTRY/${IMAGE_GO}=$REGISTRY/${IMAGE_GO}:dev-${GITHUB_SHA::7}
           kubectl apply -k .
-          kubectl rollout status deployment/go-service -n development
 
       - name: Deploy Node (dev)
         if: needs.dev-build.outputs['node-service'] == 'true'
@@ -100,7 +99,6 @@ jobs:
           cd services/node-service/k8s/overlays/development
           kustomize edit set image $REGISTRY/${IMAGE_NODE}=$REGISTRY/${IMAGE_NODE}:dev-${GITHUB_SHA::7}
           kubectl apply -k .
-          kubectl rollout status deployment/node-service -n development
 
   ############
   # STAGING  #
