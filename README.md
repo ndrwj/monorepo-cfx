@@ -181,16 +181,16 @@ graph TD
 - **Staging**: `monorepo-staging` namespace
 - **Production**: `monorepo-production` namespace
 
-## 🛠️ Technology Stack
+## Technology Stack
 
-### Application Development (Actual Implementation)
+### Application Development 
 - **Go**: v1.25.3 (Standard library `net/http`)
 - **Node.js**: v20-alpine (Express.js v4.18.2)
 - **Containerization**:
   - Go: Multi-stage Docker build dengan golang:1.25.3 + alpine:3.19
   - Node.js: Single-stage dengan node:20-alpine
 
-### CI/CD Pipeline (Actual Implementation)
+### CI/CD Pipeline 
 - **CI/CD Platform**: GitHub Actions (self-hosted runners)
 - **Container Registry**: GitHub Container Registry (ghcr.io)
 - **Infrastructure as Code**: Kubernetes YAML + Kustomize
@@ -199,7 +199,7 @@ graph TD
   - GitHub Secrets (`GHCR_PAT`)
   - Kubernetes Secrets (`ghcr-secret`)
 
-### Infrastructure (Actual Implementation)
+### Infrastructure 
 - **Container Orchestration**: Kubernetes
 - **Deployment Strategy**:
   - Go Service: 2 replicas
@@ -207,11 +207,28 @@ graph TD
 - **Namespaces**: monorepo-dev, monorepo-staging, monorepo-production
 - **Service Type**: ClusterIP dengan Ingress untuk external access
 
-### Monitoring (Bonus - Actual Implementation)
+### Monitoring
 - **Monitoring Stack**: Grafana Alloy (latest)
 - **Log Collection**: Loki source file processing
 - **Kubernetes Discovery**: Automatic pod discovery untuk monitoring namespaces
 - **Log Processing**: log parsing dengan structured labels
+
+### Rangkuman Stack/Tools yang Dipakai
+
+- Kubernetes (Baremetal)
+- Metal LB (Loadbalancer Service)
+- Kong (API Gateway + Ingress)
+- Cilium (k8s CNI)
+- Github Action
+- Grafana
+- Loki
+- Grafana Alloy
+- sslip.io
+- Nginx
+- Docker
+- Golang
+- Node.js
+- Kustomization 
 
 ## 🚀 How to Run/Test
 
@@ -224,7 +241,7 @@ kustomize >= 4.x
 gh (GitHub CLI) - untuk authentication
 ```
 
-### Local Development (Actual Implementation)
+### Local Development 
 ```bash
 # Clone repository
 git clone https://github.com/ndrwj/monorepo-cfx.git
@@ -246,7 +263,7 @@ curl http://localhost:8080/  # Go service
 curl http://localhost:8080/  # Node service (jika running di port berbeda)
 ```
 
-### CI/CD Pipeline Setup (Actual Implementation)
+### CI/CD Pipeline Setup 
 
 #### 1. GitHub Setup
 ```bash
@@ -277,7 +294,7 @@ kubectl create secret docker-registry ghcr-secret \
 kubectl apply -f monitoring/grafana-alloy.yaml
 ```
 
-### Deployment via CI/CD (Actual Implementation)
+### Deployment via CI/CD 
 
 #### Development Deployment
 ```bash
@@ -371,7 +388,7 @@ kubectl port-forward svc/grafana-alloy-svc 12345:12345 -n monitoring
 
 ## 🔧 Configuration
 
-### Docker Images (Actual Implementation)
+### Docker Images 
 ```bash
 # Go Service
 ghcr.io/ndrwj/monorepo-cfx/services/go-service:dev-{commit}
@@ -382,7 +399,7 @@ ghcr.io/ndrwj/monorepo-cfx/services/node-service:dev-{commit}
 ghcr.io/ndrwj/monorepo-cfx/services/node-service:{version}
 ```
 
-### Kubernetes Configuration (Actual Implementation)
+### Kubernetes Configuration 
 
 #### Go Service Deployment
 ```yaml
