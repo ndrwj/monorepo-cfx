@@ -529,7 +529,7 @@ server {
 
 ### Public Access Testing
 ![go-service Endpoints](docs/images/public-go.png)
-![node-service Endpoints](docs/images/public-go.png)
+![node-service Endpoints](docs/images/public-node.png)
 *Testing live endpoints via sslip.io*
 
 ### Monitoring Dashboard
